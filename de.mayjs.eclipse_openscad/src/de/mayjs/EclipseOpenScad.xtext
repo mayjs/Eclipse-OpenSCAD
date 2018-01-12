@@ -1,0 +1,232 @@
+grammar de.mayjs.EclipseOpenScad with org.eclipse.xtext.common.Terminals
+
+generate eclipseOpenScad "http://www.mayjs.de/EclipseOpenScad"
+
+Package:
+	Statements;
+	
+Statements:
+	 (statements+=Statement)+
+;
+
+Statement:
+	 Include
+	|Use
+	|Assignment";"
+	|NamedFunctionDefinition
+	|NamedModuleDefinition
+	|ModuleInstantiation
+	|ForStatement
+	|IfStatement
+;
+
+IfStatement:
+	if=IfClause block=Child (=>"else" else=Child)?
+;
+
+ForStatement:
+	for=ForClause block=Child
+;
+
+Include:
+	"include" "<"name=ID">" // TODO
+;
+
+Use:
+	"use" "<"name=ID">" // TODO
+;
+
+Number:
+	intPart=INT ("." decimalPart=INT)? |
+	"." decimalPart=INT
+;
+
+
+Expr returns Expression: ExprLet
+	// ExprAtomic "true" | "false" | "undef" | INT | STRING | ID | RangeExpr | ListExpr
+//	ExprAdd | Expr "+" Expr
+//	ExprAdd | Expr "-" Expr
+//	ExprMul | Expr "*" Expr
+//	ExprMul| Expr "/" Expr
+//	ExprMul| Expr "%" Expr
+//	| Expr ">=" Expr
+//	| Expr ">" Expr
+//	| Expr "==" Expr
+//	| Expr "!=" Expr
+//	| Expr "<=" Expr
+//	| Expr "<" Expr
+	// ExprAnd | Expr "&&" Expr
+	// ExprOr | Expr "||" Expr
+//	ExprUni | "!" Expr
+//	ExprUni | "+" Expr
+//	ExprUni | "-" Expr
+//	ExprElvis | Expr "?" Expr ":" Expr
+//	ExprIndexed | Expr "[" Expr "]"
+//	ExprAtomic | "(" Expr ")"
+//	ExprAtomic | "[" ListComprElements "]"
+// ExprLet	| LetClause Expr 
+// ExprFnCall	| FunctionCall // TODO: Binding strength of FN-Call??
+;
+
+ExprLet returns Expression:
+	(lets+=LetClause)* in=ExprIndexedHead
+;
+
+ExprIndexedHead returns Expression:
+	arr=ExprElvis ("[" index=ExprElvis "]")?
+;
+
+ExprIndexedTail returns Expression:
+	"[" index=ExprElvis "]"
+;
+
+ExprElvis returns Expression:
+	cond=ExprOr ("?" if=ExprOr ":" else=ExprOr)?
+;
+
+ExprOr returns Expression:
+	ExprAnd ({Expression.left=current} op='||' right=ExprAnd)*
+;
+
+ExprAnd returns Expression:
+	ExprRel ({Expression.left=current} op='&&' right=ExprRel)*
+;
+
+ExprRel returns Expression:
+	ExprAdd ({Expression.left=current} op=('>='|'>'|'=='|'!='|'<='|'<') right=ExprAdd)*
+;
+
+ExprAdd returns Expression:
+	ExprMul ({Expression.left=current} op=('+' | '-') right=ExprMul)*
+;
+
+ExprMul returns Expression:
+	ExprUni ({Expression.left=current} op=('*' | '/' | '%') right=ExprUni)*
+;
+
+ExprUni returns Expression:
+	{Expression} (op=('-' | '!' | '+'))? right=ExprAtomic
+;
+
+ExprAtomic:
+	FunctionCall |
+	"(" Expr ")" |
+	ExprSqBrack |
+	{NumberLiteral} val=Number |
+	{StringLiteral} val=STRING |
+	VariableReference |
+	{ConstantLiteral} val=("true" | "false" | "undef") 
+;
+
+VariableReference:
+	{BuiltinVar} "$" name=ID |
+	{UserVar} name=ID
+;
+
+ExprSqBrack:
+	"[" (head=ExprIndexedHead tail=RangeOrListExpr | (=>head=LetClause tail=ListRangeOrListCompr)) "]"
+;
+
+ListRangeOrListCompr:
+	{LetBody} in=ExprIndexedHead tail=RangeOrListExpr|
+	{ListCompr} tail=ListComprLet
+;
+
+
+// TODO: List Expressions with one or two entries
+RangeOrListExpr:
+	{ListTail} ("," content=ListExpr)? |
+	":" RangeExpr
+;
+
+RangeExpr:
+	{RangeExpr} tail=RangeExprTail
+;
+
+RangeExprTail:
+	contents += Expr (":" contents+=Expr)?
+;
+
+ListExpr:
+	{ListExpression} content+=Expr ("," content+=Expr)*
+;
+
+ListComprLet:
+	(lets+=LetClause) body=ListComprReal 
+;
+
+ListComprReal:
+	(clause+=(ForClause|IfClause))* do=Expr
+;
+
+LetClause:
+	{LetClause} "let""("ass=Assignments?")"
+;
+
+ForClause:
+	"for("Assignments")"
+;
+
+IfClause:
+	"if" "(" Expr ")"
+;
+
+NamedFunctionDefinition:
+	"function" name=ID "(" params=Parameters? ")=" body=Expr ";"  
+;
+
+NamedModuleDefinition:
+	"module" name=ID "(" params=Parameters? ")" (body+=Statement | "{" body+=Statement* "}")	
+;
+
+FunctionCall:
+	function=[NamedFunctionDefinition|ID] "(" args=Arguments? ")"
+;
+
+ModuleInstantiation:
+	modifier=ModuleModifier? module=[NamedModuleDefinition|ID] "(" p=Parameters? ")" child=Child
+;
+
+ModParameter:
+	=>head=VariableReference ( "=" tail=Expr)? |
+	val=Expr
+;
+
+Child:
+	{Children} (";"
+	| "{" (children+=Child)* "}"
+	| it=Statement)
+;
+
+Parameters:
+	parameters+=Parameter ("," parameters+=Parameter)*
+;
+
+AssignmentOrExpr:
+	var=VariableReference ("=" tail=Expr) |
+	val=Expr
+;
+
+Parameter:
+	AssignmentOrExpr // TODO: Name from Assignment
+;
+
+Arguments:
+	arguments+=Argument ("," arguments+=Argument)*
+;
+
+Argument:
+	Expr | Assignment
+;
+
+Assignments:
+	assignments+=Assignment ("," assignments+=Assignment)*
+;
+
+Assignment:
+	name=VariableReference "=" val=Expr
+;
+
+ModuleModifier:
+	"*" | "!" | "#" | "%"
+;
